@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ゲストルーム予約</title>
+<style>
+  /* ===== リセット & ベース ===== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Hiragino Sans', 'Meiryo', sans-serif;
+    background: #f0f4f8;
+    color: #2d3748;
+    min-height: 100vh;
+  }
+
+  /* ===== ヘッダー ===== */
+  header {
+    background: #2b6cb0;
+    color: #fff;
+    padding: 16px 20px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    position: relative;
+  }
+  header h1 { font-size: 1.3rem; letter-spacing: 0.05em; }
+  header p  { font-size: 0.85rem; opacity: 0.85; margin-top: 4px; }
+  .qr-btn {
+    position: absolute;
+    top: 50%; right: 14px;
+    transform: translateY(-50%);
+    background: rgba(255,255,255,0.18);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+    transition: background 0.2s;
+  }
+  .qr-btn:hover { background: rgba(255,255,255,0.32); }
+
+  /* ===== QRモーダル ===== */
+  .qr-body { text-align: center; }
+  .qr-body img { display: block; margin: 0 auto 12px; border: 1px solid #e2e8f0; border-radius: 8px; }
+  .qr-url {
+    font-size: 0.72rem; color: #718096;
+    word-break: break-all;
+    background: #f7fafc; border-radius: 4px;
+    padding: 8px 10px; margin-top: 4px; user-select: all;
+  }
+  .qr-note { font-size: 0.8rem; color: #4a5568; margin-bottom: 12px; }
+
+  /* ===== 印刷（QRコードのみ表示） ===== */
+  @media print {
+    body > *:not(#qrModal) { display: none !important; }
+    #qrModal {
+      display: flex !important;
+      background: none;
+      position: static;
+    }
+    #qrModal .modal { box-shadow: none; }
+    #qrModal .modal-buttons,
+    #qrModal #qrCloseBtn { display: none !important; }
+  }
+
+  /* ===== 日付ナビゲーション ===== */
+  .date-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 16px 20px;
+    background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .date-nav button {
+    background: #2b6cb0;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .date-nav button:hover { background: #2c5282; }
+  .date-nav button:disabled { background: #a0aec0; cursor: default; }
+  #dateDisplay {
+    font-size: 1.1rem;
+    font-weight: bold;
+    min-width: 160px;
+    text-align: center;
+    cursor: pointer;
+    border-bottom: 2px solid #2b6cb0;
+    padding-bottom: 2px;
+  }
+  #datePicker {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* ===== メインコンテンツ ===== */
+  main {
+    max-width: 640px;
+    margin: 20px auto;
+    padding: 0 16px;
+  }
+
+  /* ===== 凡例 ===== */
+  .legend {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+    align-items: center;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-box {
+    width: 20px; height: 20px;
+    border-radius: 4px;
+    border: 1px solid rgba(0,0,0,0.15);
+  }
+  .legend-box.available { background: #c6f6d5; }
+  .legend-box.booked    { background: #fed7d7; }
+
+  /* ===== 予約テーブル ===== */
+  .slot-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+  }
+  .slot-table th {
+    background: #ebf4ff;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    color: #2c5282;
+    text-align: left;
+  }
+  .slot-table td {
+    padding: 10px 14px;
+    border-top: 1px solid #e2e8f0;
+    font-size: 0.9rem;
+    vertical-align: middle;
+  }
+  .slot-table tr:hover td { background: #f7fafc; }
+
+  .time-label { font-weight: bold; color: #4a5568; white-space: nowrap; }
+
+  /* スロットセル */
+  .slot-cell {
+    border-radius: 6px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+    user-select: none;
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+  .slot-cell:hover { filter: brightness(0.92); transform: scale(0.98); }
+  .slot-cell.available {
+    background: #c6f6d5;
+    color: #276749;
+    text-align: center;
+    font-weight: bold;
+  }
+  .slot-cell.booked {
+    background: #fed7d7;
+    color: #9b2c2c;
+  }
+  .slot-cell.past {
+    background: #edf2f7;
+    color: #a0aec0;
+    cursor: default;
+    text-align: center;
+  }
+  .slot-cell.past:hover { filter: none; transform: none; }
+
+  /* ローディング */
+  .loading-row td {
+    text-align: center;
+    padding: 30px;
+    color: #718096;
+    font-size: 0.9rem;
+  }
+
+  /* ===== モーダル共通 ===== */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    width: 100%;
+    max-width: 380px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+  }
+  .modal h2 {
+    font-size: 1.1rem;
+    margin-bottom: 16px;
+    color: #2d3748;
+    border-bottom: 2px solid #ebf4ff;
+    padding-bottom: 8px;
+  }
+  .modal .slot-info {
+    background: #ebf4ff;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+    color: #2c5282;
+    font-weight: bold;
+  }
+  .form-group { margin-bottom: 14px; }
+  .form-group label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: bold;
+    color: #4a5568;
+    margin-bottom: 6px;
+  }
+  .form-group select,
+  .form-group input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    transition: border-color 0.2s;
+  }
+  .form-group select:focus,
+  .form-group input[type="text"]:focus {
+    outline: none;
+    border-color: #2b6cb0;
+    box-shadow: 0 0 0 2px rgba(43,108,176,0.2);
+  }
+  .modal-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .btn {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    cursor: pointer;
+    font-weight: bold;
+    transition: filter 0.15s;
+  }
+  .btn:hover { filter: brightness(0.9); }
+  .btn-primary { background: #2b6cb0; color: #fff; }
+  .btn-danger  { background: #e53e3e; color: #fff; }
+  .btn-cancel  { background: #e2e8f0; color: #4a5568; }
+
+  /* エラーメッセージ */
+  .error-msg {
+    color: #c53030;
+    font-size: 0.83rem;
+    margin-top: 6px;
+    display: none;
+  }
+  .error-msg.visible { display: block; }
+
+  /* トースト通知 */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: #2d3748;
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    z-index: 200;
+    transition: transform 0.3s ease;
+    white-space: nowrap;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+  #toast.success { background: #276749; }
+  #toast.error   { background: #9b2c2c; }
+
+  /* ===== 月間ビュー ===== */
+  .view-toggle-btn {
+    background: #edf2f7;
+    color: #4a5568;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+    transition: background 0.2s;
+    margin-left: 8px;
+  }
+  .view-toggle-btn:hover { background: #e2e8f0; }
+  .view-toggle-btn.active { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+
+  .week-nav {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 10px 20px;
+    background: #f7fafc;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .week-nav.active { display: flex; }
+  #weekRange {
+    font-size: 1rem;
+    font-weight: bold;
+    min-width: 120px;
+    text-align: center;
+  }
+
+  .week-view-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 10px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+  }
+  .week-table {
+    width: 100%;
+    min-width: 360px;
+    border-collapse: collapse;
+    background: #fff;
+  }
+  .week-table th {
+    background: #ebf4ff;
+    padding: 7px 4px;
+    font-size: 0.78rem;
+    color: #2c5282;
+    text-align: center;
+    border-right: 1px solid #e2e8f0;
+    white-space: nowrap;
+    line-height: 1.4;
+  }
+  .week-table th:first-child { width: 68px; }
+  .week-table th.today-col { background: #bee3f8; color: #1a365d; }
+  .week-table th.sat-col  { color: #2b6cb0; }
+  .week-table th.sun-col  { color: #c53030; }
+  .week-table td {
+    padding: 3px;
+    border-top: 1px solid #e2e8f0;
+    border-right: 1px solid #e2e8f0;
+    vertical-align: middle;
+  }
+  .week-table td.time-col {
+    font-weight: bold;
+    color: #4a5568;
+    text-align: center;
+    white-space: nowrap;
+    background: #f7fafc;
+    font-size: 0.72rem;
+    padding: 4px 3px;
+  }
+  .week-table td.today-col { background: #ebf8ff; }
+  .week-table td.sat-col { color: #2b6cb0; font-weight: bold; }
+  .week-table td.sun-col { color: #c53030; font-weight: bold; }
+  .week-cell {
+    border-radius: 4px;
+    padding: 5px 3px;
+    cursor: pointer;
+    text-align: center;
+    font-size: 0.7rem;
+    line-height: 1.3;
+    transition: filter 0.15s;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    word-break: break-all;
+  }
+  .week-cell:hover { filter: brightness(0.9); }
+  .week-cell.available { background: #c6f6d5; color: #276749; font-weight: bold; }
+  .week-cell.booked    { background: #fed7d7; color: #9b2c2c; }
+  .week-cell.past      { background: #edf2f7; color: #a0aec0; cursor: default; }
+  .week-cell.past:hover { filter: none; }
+
+  /* ===== レスポンシブ ===== */
+  @media (max-width: 480px) {
+    header h1 { font-size: 1.1rem; }
+    .slot-table th, .slot-table td { padding: 8px 10px; }
+    .slot-cell { padding: 6px 8px; font-size: 0.8rem; }
+    .time-label { font-size: 0.82rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== ヘッダー ===== -->
+<header>
+  <h1>🏠 リノア西葛西・ゲストルーム予約</h1>
+  <p id="todayLabel"></p>
+  <button class="qr-btn" id="qrBtn">QR</button>
+</header>
+
+<!-- ===== 日付ナビゲーション ===== -->
+<div class="date-nav">
+  <button id="prevDay" title="前日">&#8249;</button>
+  <span id="dateDisplay" title="クリックして日付を選択"></span>
+  <input type="date" id="datePicker" tabindex="-1">
+  <button id="nextDay" title="翌日">&#8250;</button>
+  <button class="view-toggle-btn" id="viewToggle">月間表示</button>
+</div>
+
+<!-- ===== 月間ナビゲーション ===== -->
+<div class="week-nav" id="weekNav">
+  <button id="prevWeek" style="background:#2b6cb0;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:1rem;cursor:pointer;">&#8249; 前月</button>
+  <span id="weekRange"></span>
+  <button id="nextWeek" style="background:#2b6cb0;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:1rem;cursor:pointer;">次月 &#8250;</button>
+</div>
+
+<!-- ===== メインコンテンツ ===== -->
+<main>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-box available"></div>空き（クリックで予約）</div>
+    <div class="legend-item"><div class="legend-box booked"></div>予約済み（クリックでキャンセル）</div>
+  </div>
+
+  <!-- 日別ビュー -->
+  <div id="dayView">
+    <table class="slot-table" id="slotTable">
+      <thead>
+        <tr>
+          <th style="width:90px">時間帯</th>
+          <th>状態</th>
+        </tr>
+      </thead>
+      <tbody id="slotBody">
+        <tr class="loading-row"><td colspan="2">読み込み中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 月間ビュー -->
+  <div id="weekView" style="display:none">
+    <div class="week-view-wrap">
+      <table class="week-table">
+        <thead id="weekHead"></thead>
+        <tbody id="weekBody">
+          <tr><td colspan="5" style="text-align:center;padding:20px;color:#718096">読み込み中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- ===== 予約モーダル ===== -->
+<div class="modal-overlay" id="bookModal">
+  <div class="modal">
+    <h2>予約する</h2>
+    <div class="slot-info" id="bookSlotInfo"></div>
+    <div class="form-group">
+      <label for="bookRoom">部屋番号</label>
+      <select id="bookRoom"></select>
+    </div>
+    <div class="form-group">
+      <label for="bookName">お名前</label>
+      <input type="text" id="bookName" placeholder="例: 山田 太郎" maxlength="20">
+      <div class="error-msg" id="bookNameError">お名前を入力してください</div>
+    </div>
+    <div class="modal-buttons">
+      <button class="btn btn-cancel" id="bookCancelBtn">キャンセル</button>
+      <button class="btn btn-primary" id="bookSubmitBtn">予約する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== キャンセルモーダル ===== -->
+<div class="modal-overlay" id="cancelModal">
+  <div class="modal">
+    <h2>予約をキャンセルする</h2>
+    <div class="slot-info" id="cancelSlotInfo"></div>
+    <div class="form-group">
+      <label for="cancelRoom">部屋番号（本人確認）</label>
+      <select id="cancelRoom"></select>
+    </div>
+    <div class="error-msg" id="cancelError">部屋番号が一致しません</div>
+    <div class="modal-buttons">
+      <button class="btn btn-cancel" id="cancelCancelBtn">戻る</button>
+      <button class="btn btn-danger" id="cancelSubmitBtn">キャンセルする</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== QRコードモーダル ===== -->
+<div class="modal-overlay" id="qrModal">
+  <div class="modal">
+    <h2>QRコード</h2>
+    <div class="qr-body">
+      <p class="qr-note">このQRコードをスキャンして予約ページへアクセス</p>
+      <img id="qrImage" src="" alt="QRコード" width="200" height="200">
+      <div class="qr-url" id="qrUrl"></div>
+    </div>
+    <div class="modal-buttons">
+      <button class="btn btn-cancel" id="qrCloseBtn">閉じる</button>
+      <button class="btn btn-primary" id="qrPrintBtn">印刷する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== トースト ===== -->
+<div id="toast"></div>
+
+<script>
+// ============================================================
+// ★ 設定項目 ★
+// ============================================================
+
+// GASウェブアプリのURL（デプロイ後に取得したURLを貼り付けてください）
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxyQTJyxbWSiAeagfahJcf24IIPkuzG0xkh5filcOLz-BzPVQaitZ6AAWHQ4ndz_CO0Qw/exec';
+
+// 受付時間スロット（開始時刻リスト）09:00〜21:00 / 3時間枠
+const TIME_SLOTS = ['09:00', '12:00', '15:00', '18:00'];
+const SLOT_DURATION_HOURS = 3;
+
+// 部屋番号リスト（建物構成に合わせて変更可能）
+const ROOM_NUMBERS = generateRooms([
+  { floor: 2,  rooms: 7 },
+  { floor: 3,  rooms: 7 },
+  { floor: 4,  rooms: 7 },
+  { floor: 5,  rooms: 7 },
+  { floor: 6,  rooms: 7 },
+  { floor: 7,  rooms: 7 },
+  { floor: 8,  rooms: 7 },
+  { floor: 9,  rooms: 5 },
+  { floor: 10, rooms: 5 },
+]);
+
+function generateRooms(config) {
+  const rooms = [];
+  for (const { floor, rooms: count } of config) {
+    for (let i = 1; i <= count; i++) {
+      rooms.push(String(floor * 100 + i));
+    }
+  }
+  return rooms;
+}
+
+// ============================================================
+// 状態管理
+// ============================================================
+let currentDate = toDateString(new Date());  // 'YYYY-MM-DD'
+let reservations = [];   // 現在日付の予約リスト
+let pendingSlot = null;  // 予約/キャンセル操作対象スロット
+let viewMode = 'day';    // 'day' or 'week'
+let currentMonthStr = '';  // 月間ビューの対象年月（'YYYY-MM'）
+
+// ---- クライアントキャッシュ（3分TTL） ----
+const _cache = new Map();
+const CACHE_TTL = 3 * 60 * 1000;
+function getCached(date) {
+  const e = _cache.get(date);
+  return (e && Date.now() - e.ts < CACHE_TTL) ? e.data : null;
+}
+function setCache(date, data) { _cache.set(date, { data, ts: Date.now() }); }
+function invalidateCache(date) { _cache.delete(date); }
+
+// ============================================================
+// 初期化
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  initDateNav();
+  initWeekNav();
+  initModals();
+  populateRoomSelects();
+  updateDateDisplay();
+  loadReservations();
+
+  const today = new Date();
+  document.getElementById('todayLabel').textContent =
+    `本日: ${formatDateJa(today)}`;
+});
+
+// ============================================================
+// 月間ビュー
+// ============================================================
+function getMonthStr(dateStr) {
+  return dateStr.slice(0, 7); // 'YYYY-MM'
+}
+
+function offsetMonth(monthStr, delta) {
+  const [y, m] = monthStr.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+function getMonthDates(monthStr) {
+  const [y, m] = monthStr.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const dates = [];
+  for (let day = 1; day <= daysInMonth; day++) {
+    dates.push(`${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`);
+  }
+  return dates;
+}
+
+function initWeekNav() {
+  document.getElementById('viewToggle').addEventListener('click', toggleViewMode);
+  document.getElementById('prevWeek').addEventListener('click', () => {
+    currentMonthStr = offsetMonth(currentMonthStr, -1);
+    updateMonthNav();
+    loadMonthReservations();
+  });
+  document.getElementById('nextWeek').addEventListener('click', () => {
+    currentMonthStr = offsetMonth(currentMonthStr, 1);
+    updateMonthNav();
+    loadMonthReservations();
+  });
+}
+
+function toggleViewMode() {
+  if (viewMode === 'day') {
+    viewMode = 'month';
+    currentMonthStr = getMonthStr(currentDate);
+    document.getElementById('viewToggle').textContent = '日別表示';
+    document.getElementById('viewToggle').classList.add('active');
+    document.getElementById('dayView').style.display = 'none';
+    document.getElementById('weekView').style.display = 'block';
+    document.getElementById('weekNav').classList.add('active');
+    document.querySelector('.date-nav').style.display = 'none';
+    updateMonthNav();
+    loadMonthReservations();
+  } else {
+    viewMode = 'day';
+    document.getElementById('viewToggle').textContent = '月間表示';
+    document.getElementById('viewToggle').classList.remove('active');
+    document.getElementById('dayView').style.display = 'block';
+    document.getElementById('weekView').style.display = 'none';
+    document.getElementById('weekNav').classList.remove('active');
+    document.querySelector('.date-nav').style.display = 'flex';
+    loadReservations();
+  }
+}
+
+function updateMonthNav() {
+  const [y, m] = currentMonthStr.split('-').map(Number);
+  document.getElementById('weekRange').textContent = `${y}年${m}月`;
+
+  const maxMonthStr = getMonthStr(offsetDate(toDateString(new Date()), 60));
+  document.getElementById('prevWeek').disabled = false;
+  document.getElementById('nextWeek').disabled = currentMonthStr >= maxMonthStr;
+}
+
+async function loadMonthReservations() {
+  const dates = getMonthDates(currentMonthStr);
+  const monthData = {};
+
+  // 全日付がキャッシュ済みなら即表示
+  let allCached = true;
+  for (const d of dates) {
+    const cached = getCached(d);
+    if (cached) { monthData[d] = cached; } else { allCached = false; }
+  }
+  if (allCached) { renderMonthSlots(monthData); return; }
+
+  document.getElementById('weekBody').innerHTML =
+    '<tr><td colspan="5" style="text-align:center;padding:20px;color:#718096">読み込み中...</td></tr>';
+
+  if (!isGasUrlConfigured()) { renderMonthSlots(monthData); return; }
+
+  try {
+    // 月全体を1リクエストで一括取得（31リクエスト → 1リクエスト）
+    const startDate = dates[0];
+    const endDate   = dates[dates.length - 1];
+    const res  = await fetch(`${GAS_URL}?startDate=${startDate}&endDate=${endDate}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+
+    // 日付ごとに振り分けてキャッシュ保存
+    const byDate = {};
+    for (const d of dates) byDate[d] = [];
+    for (const r of normalizeReservations(json.reservations || [])) {
+      if (byDate[r.date]) byDate[r.date].push(r);
+    }
+    for (const [d, list] of Object.entries(byDate)) {
+      setCache(d, list);
+      monthData[d] = list;
+    }
+  } catch (err) {
+    console.error('月間データの取得に失敗:', err);
+    showToast('データの取得に失敗しました。', 'error');
+  }
+
+  renderMonthSlots(monthData);
+}
+
+function renderMonthSlots(monthData) {
+  const dates    = getMonthDates(currentMonthStr);
+  const now      = new Date();
+  const todayStr = toDateString(now);
+  const curHour  = now.getHours();
+  const dayNames = ['日','月','火','水','木','金','土'];
+
+  // ヘッダー（日付列 + 時間帯列）
+  const thead = document.getElementById('weekHead');
+  let hHtml = '<tr><th>日付</th>';
+  for (const ts of TIME_SLOTS) {
+    const sh = ts.slice(0,2), eh = getSlotEndTime(ts).slice(0,2);
+    hHtml += `<th>${sh}〜${eh}</th>`;
+  }
+  thead.innerHTML = hHtml + '</tr>';
+
+  // ボディ（1行 = 1日）
+  const tbody = document.getElementById('weekBody');
+  tbody.innerHTML = '';
+
+  for (const dateStr of dates) {
+    const d          = parseDate(dateStr);
+    const dow        = d.getDay(); // 0=日, 6=土
+    const isToday    = dateStr === todayStr;
+    const isPastDay  = dateStr < todayStr;
+    const dayReservations = monthData[dateStr] || [];
+
+    const tr = document.createElement('tr');
+
+    // 日付列
+    const tdDate = document.createElement('td');
+    tdDate.className = 'time-col';
+    if (isToday)  tdDate.classList.add('today-col');
+    if (dow === 6) tdDate.classList.add('sat-col');
+    if (dow === 0) tdDate.classList.add('sun-col');
+    tdDate.textContent = `${d.getDate()}日(${dayNames[dow]})`;
+    tr.appendChild(tdDate);
+
+    // 時間帯列
+    for (const timeSlot of TIME_SLOTS) {
+      const hour    = parseInt(timeSlot.split(':')[0], 10);
+      const isPast  = isPastDay || (isToday && hour < curHour);
+      const reservation = dayReservations.find(r => r.startTime === timeSlot);
+
+      const td = document.createElement('td');
+      if (isToday) td.classList.add('today-col');
+
+      const div = document.createElement('div');
+      div.className = 'week-cell';
+
+      if (isPast) {
+        div.classList.add('past');
+        div.textContent = reservation ? `${reservation.roomNumber}号室` : '―';
+      } else if (reservation) {
+        div.classList.add('booked');
+        div.innerHTML = `<span>${reservation.roomNumber}号室<br>${escapeHtml(reservation.name)}</span>`;
+        const _d = dateStr, _r = reservation, _t = timeSlot;
+        div.addEventListener('click', () => { currentDate = _d; openCancelModal(_r, _t); });
+      } else {
+        div.classList.add('available');
+        div.textContent = '空き';
+        const _d = dateStr, _t = timeSlot;
+        div.addEventListener('click', () => { currentDate = _d; openBookModal(_t); });
+      }
+
+      td.appendChild(div);
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+// ============================================================
+// 日付ナビゲーション
+// ============================================================
+function initDateNav() {
+  document.getElementById('prevDay').addEventListener('click', () => {
+    currentDate = offsetDate(currentDate, -1);
+    updateDateDisplay();
+    loadReservations();
+  });
+  document.getElementById('nextDay').addEventListener('click', () => {
+    currentDate = offsetDate(currentDate, 1);
+    updateDateDisplay();
+    loadReservations();
+  });
+
+  const picker = document.getElementById('datePicker');
+  document.getElementById('dateDisplay').addEventListener('click', () => {
+    picker.value = currentDate;
+    picker.style.pointerEvents = 'auto';
+    picker.focus();
+    picker.click();
+  });
+  picker.addEventListener('change', () => {
+    if (picker.value) {
+      currentDate = picker.value;
+      updateDateDisplay();
+      loadReservations();
+    }
+    picker.style.pointerEvents = 'none';
+  });
+}
+
+function updateDateDisplay() {
+  const d = parseDate(currentDate);
+  document.getElementById('dateDisplay').textContent = formatDateJa(d);
+  document.getElementById('datePicker').value = currentDate;
+
+  // 過去日は前日ボタンを有効のまま（過去の確認も許可）
+  // 今日より30日先は制限
+  const todayStr = toDateString(new Date());
+  const maxDate = offsetDate(todayStr, 30);
+  document.getElementById('nextDay').disabled = currentDate >= maxDate;
+}
+
+// ============================================================
+// 予約データ読み込み
+// ============================================================
+async function loadReservations() {
+  // キャッシュヒット時はスキップ
+  const cached = getCached(currentDate);
+  if (cached) {
+    reservations = cached;
+    renderSlots(reservations);
+    return;
+  }
+
+  const tbody = document.getElementById('slotBody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="2">読み込み中...</td></tr>';
+
+  if (!isGasUrlConfigured()) {
+    renderSlots([]);
+    return;
+  }
+
+  try {
+    const res = await fetch(`${GAS_URL}?date=${currentDate}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+    reservations = normalizeReservations(json.reservations || []);
+    setCache(currentDate, reservations);
+  } catch (err) {
+    console.error('予約データの取得に失敗:', err);
+    showToast('データの取得に失敗しました。GAS URLを確認してください。', 'error');
+    reservations = [];
+  }
+
+  renderSlots(reservations);
+}
+
+// ============================================================
+// スロット描画
+// ============================================================
+function renderSlots(reservations) {
+  const tbody = document.getElementById('slotBody');
+  tbody.innerHTML = '';
+
+  const now = new Date();
+  const todayStr = toDateString(now);
+  const currentHour = now.getHours();
+
+  for (const timeSlot of TIME_SLOTS) {
+    const hour = parseInt(timeSlot.split(':')[0], 10);
+    const isPast = currentDate < todayStr ||
+                   (currentDate === todayStr && hour < currentHour);
+
+    const reservation = reservations.find(r => r.startTime === timeSlot);
+
+    const tr = document.createElement('tr');
+
+    // 時間列
+    const tdTime = document.createElement('td');
+    tdTime.className = 'time-label';
+    tdTime.textContent = `${timeSlot}〜${getSlotEndTime(timeSlot)}`;
+    tr.appendChild(tdTime);
+
+    // スロット列
+    const tdSlot = document.createElement('td');
+    const div = document.createElement('div');
+    div.className = 'slot-cell';
+
+    if (isPast) {
+      div.classList.add('past');
+      div.textContent = reservation
+        ? `${reservation.roomNumber}号室 ${reservation.name}`
+        : '―';
+    } else if (reservation) {
+      div.classList.add('booked');
+      div.innerHTML = `<strong>${reservation.roomNumber}号室</strong> ${escapeHtml(reservation.name)}<br>
+                       <small style="opacity:0.75">クリックでキャンセル</small>`;
+      div.addEventListener('click', () => openCancelModal(reservation, timeSlot));
+    } else {
+      div.classList.add('available');
+      div.textContent = '空き';
+      div.addEventListener('click', () => openBookModal(timeSlot));
+    }
+
+    tdSlot.appendChild(div);
+    tr.appendChild(tdSlot);
+    tbody.appendChild(tr);
+  }
+}
+
+// ============================================================
+// 予約モーダル
+// ============================================================
+function openBookModal(timeSlot) {
+  pendingSlot = { timeSlot };
+  const d = parseDate(currentDate);
+  document.getElementById('bookSlotInfo').textContent =
+    `${formatDateJa(d)} ${timeSlot}〜${getSlotEndTime(timeSlot)}`;
+  document.getElementById('bookName').value = '';
+  document.getElementById('bookNameError').classList.remove('visible');
+  document.getElementById('bookModal').classList.add('active');
+  document.getElementById('bookName').focus();
+}
+
+async function submitBooking() {
+  const roomNumber = document.getElementById('bookRoom').value;
+  const name = document.getElementById('bookName').value.trim();
+
+  if (!name) {
+    document.getElementById('bookNameError').classList.add('visible');
+    return;
+  }
+  document.getElementById('bookNameError').classList.remove('visible');
+
+  document.getElementById('bookSubmitBtn').disabled = true;
+  document.getElementById('bookSubmitBtn').textContent = '送信中...';
+
+  try {
+    if (!isGasUrlConfigured()) {
+      throw new Error('GAS URLが設定されていません。index.html の GAS_URL を設定してください。');
+    }
+
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'add',
+        date: currentDate,
+        startTime: pendingSlot.timeSlot,
+        roomNumber,
+        name
+      })
+    });
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+
+    // POSTレスポンスのデータで直接キャッシュを更新（GETリクエスト不要）
+    const newRes = normalizeReservations([json.reservation])[0];
+    const dayList = getCached(currentDate) || [];
+    setCache(currentDate, [...dayList, newRes]);
+
+    closeModal('bookModal');
+    showToast('予約が完了しました！', 'success');
+    refreshView();
+  } catch (err) {
+    showToast(err.message || '予約に失敗しました', 'error');
+  } finally {
+    document.getElementById('bookSubmitBtn').disabled = false;
+    document.getElementById('bookSubmitBtn').textContent = '予約する';
+  }
+}
+
+// ============================================================
+// キャンセルモーダル
+// ============================================================
+function openCancelModal(reservation, timeSlot) {
+  pendingSlot = { reservation, timeSlot };
+  const d = parseDate(currentDate);
+  document.getElementById('cancelSlotInfo').innerHTML =
+    `${formatDateJa(d)} ${timeSlot}〜${getSlotEndTime(timeSlot)}<br>` +
+    `<strong>${reservation.roomNumber}号室</strong> ${escapeHtml(reservation.name)}`;
+  document.getElementById('cancelError').classList.remove('visible');
+  document.getElementById('cancelModal').classList.add('active');
+}
+
+async function submitCancel() {
+  const roomNumber = document.getElementById('cancelRoom').value;
+
+  document.getElementById('cancelSubmitBtn').disabled = true;
+  document.getElementById('cancelSubmitBtn').textContent = '処理中...';
+
+  try {
+    if (!isGasUrlConfigured()) {
+      throw new Error('GAS URLが設定されていません');
+    }
+
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'cancel',
+        id: pendingSlot.reservation.id,
+        roomNumber
+      })
+    });
+    const json = await res.json();
+    if (json.error) {
+      document.getElementById('cancelError').textContent = json.error;
+      document.getElementById('cancelError').classList.add('visible');
+      return;
+    }
+
+    // キャッシュから該当予約を除去して直接再描画
+    const dayList = getCached(currentDate) || [];
+    setCache(currentDate, dayList.filter(r => r.id !== pendingSlot.reservation.id));
+
+    closeModal('cancelModal');
+    showToast('キャンセルしました', 'success');
+    refreshView();
+  } catch (err) {
+    document.getElementById('cancelError').textContent = err.message || 'キャンセルに失敗しました';
+    document.getElementById('cancelError').classList.add('visible');
+  } finally {
+    document.getElementById('cancelSubmitBtn').disabled = false;
+    document.getElementById('cancelSubmitBtn').textContent = 'キャンセルする';
+  }
+}
+
+// ============================================================
+// モーダル共通
+// ============================================================
+function initModals() {
+  document.getElementById('bookCancelBtn').addEventListener('click', () => closeModal('bookModal'));
+  document.getElementById('bookSubmitBtn').addEventListener('click', submitBooking);
+  document.getElementById('cancelCancelBtn').addEventListener('click', () => closeModal('cancelModal'));
+  document.getElementById('cancelSubmitBtn').addEventListener('click', submitCancel);
+
+  // Enterキーで送信
+  document.getElementById('bookName').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitBooking();
+  });
+
+  // オーバーレイクリックで閉じる
+  document.getElementById('bookModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('bookModal')) closeModal('bookModal');
+  });
+  document.getElementById('cancelModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('cancelModal')) closeModal('cancelModal');
+  });
+
+  // QRコードモーダル
+  document.getElementById('qrBtn').addEventListener('click', openQrModal);
+  document.getElementById('qrCloseBtn').addEventListener('click', () => closeModal('qrModal'));
+  document.getElementById('qrPrintBtn').addEventListener('click', () => window.print());
+  document.getElementById('qrModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('qrModal')) closeModal('qrModal');
+  });
+}
+
+function openQrModal() {
+  const url = window.location.href.split('?')[0]; // クエリパラメータを除いたURL
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=10&data=${encodeURIComponent(url)}`;
+  document.getElementById('qrImage').src = qrApiUrl;
+  document.getElementById('qrUrl').textContent = url;
+  document.getElementById('qrModal').classList.add('active');
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+  pendingSlot = null;
+}
+
+// ============================================================
+// 部屋番号セレクトを初期化
+// ============================================================
+function populateRoomSelects() {
+  ['bookRoom', 'cancelRoom'].forEach(id => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = '';
+    for (const room of ROOM_NUMBERS) {
+      const opt = document.createElement('option');
+      opt.value = room;
+      opt.textContent = `${room}号室`;
+      sel.appendChild(opt);
+    }
+  });
+}
+
+// ============================================================
+// トースト通知
+// ============================================================
+let toastTimer = null;
+function showToast(msg, type = '') {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = type ? `show ${type}` : 'show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.className = ''; }, 3000);
+}
+
+// ============================================================
+// ユーティリティ
+// ============================================================
+function toDateString(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function parseDate(str) {
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function offsetDate(dateStr, days) {
+  const d = parseDate(dateStr);
+  d.setDate(d.getDate() + days);
+  return toDateString(d);
+}
+
+function formatDateJa(date) {
+  const days = ['日','月','火','水','木','金','土'];
+  return `${date.getFullYear()}年${date.getMonth()+1}月${date.getDate()}日（${days[date.getDay()]}）`;
+}
+
+function getSlotEndTime(startTime) {
+  const h = parseInt(startTime.split(':')[0], 10) + SLOT_DURATION_HOURS;
+  return String(h).padStart(2, '0') + ':00';
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function normalizeReservations(list) {
+  return (list || []).map(r => {
+    if (!r) return r;
+    // 古いAPIや別実装で 'time' を返す場合に対応
+    if (r.time && !r.startTime) r.startTime = r.time;
+    // '9' や '9:0' のような形式に対する補正
+    if (r.startTime && /^\d{1,2}$/.test(r.startTime)) r.startTime = r.startTime.padStart(2,'0') + ':00';
+    if (r.startTime && /^\d{1}:\d{1}$/.test(r.startTime)) {
+      const parts = r.startTime.split(':');
+      r.startTime = parts[0].padStart(2,'0') + ':' + parts[1].padStart(2,'0');
+    }
+    if (r.roomNumber != null) r.roomNumber = String(r.roomNumber);
+    return r;
+  });
+}
+
+function isGasUrlConfigured() {
+  return Boolean(GAS_URL);
+}
+
+// キャッシュの現在の内容でビューを即時再描画（GASリクエスト不要）
+function refreshView() {
+  if (viewMode === 'month') {
+    const dates = getMonthDates(currentMonthStr);
+    const monthData = {};
+    for (const d of dates) {
+      const cached = getCached(d);
+      if (cached) monthData[d] = cached;
+    }
+    renderMonthSlots(monthData);
+  } else {
+    reservations = getCached(currentDate) || [];
+    renderSlots(reservations);
+  }
+}
+</script>
+</body>
+</html>
