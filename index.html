@@ -706,6 +706,51 @@
     .slot-table th, .slot-table td { padding: 8px 10px; }
     .slot-cell { padding: 6px 8px; font-size: 0.8rem; }
     .time-label { font-size: 0.82rem; }
+
+    .week-nav {
+      width: calc(100% - 20px);
+      padding: 10px;
+      gap: 8px;
+    }
+    .week-nav.active {
+      display: grid;
+      grid-template-columns: minmax(92px, 1fr) minmax(136px, 1.35fr) minmax(92px, 1fr);
+      align-items: center;
+    }
+
+    .month-nav-btn,
+    #prevWeek,
+    #nextWeek {
+      min-width: 0;
+      width: 100%;
+      min-height: 42px;
+      padding: 8px 10px;
+      font-size: 0.95rem;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    #weekRange {
+      min-width: 0;
+      width: 100%;
+      min-height: 42px;
+      padding: 8px 10px;
+      font-size: 0.98rem;
+      line-height: 1;
+    }
+  }
+
+  @media (max-width: 375px) {
+    .week-nav.active {
+      grid-template-columns: minmax(84px, 1fr) minmax(126px, 1.25fr) minmax(84px, 1fr);
+    }
+    .month-nav-btn,
+    #prevWeek,
+    #nextWeek,
+    #weekRange {
+      font-size: 0.88rem;
+      padding: 8px 7px;
+    }
   }
 </style>
 </head>
