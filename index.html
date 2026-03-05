@@ -897,6 +897,21 @@
   </div>
 </div>
 
+<!-- ===== 日付選択フォールバックモーダル（モバイル用） ===== -->
+<div class="modal-overlay" id="fallbackPickerModal">
+  <div class="modal">
+    <h2 id="fallbackPickerTitle">日付を選択</h2>
+    <div class="form-group">
+      <label for="fallbackPickerInput" id="fallbackPickerLabel">日付</label>
+      <input type="date" id="fallbackPickerInput">
+    </div>
+    <div class="modal-buttons">
+      <button class="btn btn-cancel" id="fallbackPickerCancelBtn">キャンセル</button>
+      <button class="btn btn-primary" id="fallbackPickerApplyBtn">適用する</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== トースト ===== -->
 <div id="toast"></div>
 
@@ -943,6 +958,7 @@ let reservations = [];   // 現在日付の予約リスト
 let pendingSlot = null;  // 予約/キャンセル操作対象スロット
 let viewMode = 'month';  // 'day' or 'month'
 let currentMonthStr = getMonthStr(currentDate);  // 月間ビューの対象年月（'YYYY-MM'）
+let fallbackPickerMode = 'date'; // 'date' or 'month'
 
 // ---- クライアントキャッシュ（3分TTL） ----
 const _cache = new Map();
@@ -998,7 +1014,7 @@ function initWeekNav() {
   const monthPicker = document.getElementById('monthPicker');
 
   document.getElementById('weekRange').addEventListener('click', () => {
-    openNativePicker(monthPicker, currentMonthStr);
+    openMonthPicker(monthPicker);
   });
 
   monthPicker.addEventListener('change', () => {
@@ -1207,7 +1223,7 @@ function initDateNav() {
 
   const picker = document.getElementById('datePicker');
   document.getElementById('dateDisplay').addEventListener('click', () => {
-    openNativePicker(picker, currentDate);
+    openDatePicker(picker);
   });
   picker.addEventListener('change', () => {
     if (picker.value) {
@@ -1217,6 +1233,87 @@ function initDateNav() {
     }
     picker.style.pointerEvents = 'none';
   });
+}
+
+function openDatePicker(inputEl) {
+  if (shouldUseFallbackPicker('date')) {
+    openFallbackPicker('date', currentDate);
+    return;
+  }
+  openNativePicker(inputEl, currentDate);
+}
+
+function openMonthPicker(inputEl) {
+  if (shouldUseFallbackPicker('month')) {
+    openFallbackPicker('month', currentMonthStr);
+    return;
+  }
+  openNativePicker(inputEl, currentMonthStr);
+}
+
+function shouldUseFallbackPicker(mode) {
+  const isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+  if (!isTouch) return false;
+  if (mode === 'month' && !isMonthInputSupported()) return true;
+  // モバイルではプログラム起動のネイティブピッカーがブロックされるケースがあるため常にフォールバック
+  return true;
+}
+
+function isMonthInputSupported() {
+  const el = document.createElement('input');
+  el.setAttribute('type', 'month');
+  return el.type === 'month';
+}
+
+function openFallbackPicker(mode, value) {
+  fallbackPickerMode = mode;
+  const modal = document.getElementById('fallbackPickerModal');
+  const title = document.getElementById('fallbackPickerTitle');
+  const label = document.getElementById('fallbackPickerLabel');
+  const input = document.getElementById('fallbackPickerInput');
+
+  if (mode === 'month') {
+    title.textContent = '月を選択';
+    label.textContent = '対象月';
+    input.type = 'date';
+    input.value = `${value}-01`;
+  } else {
+    title.textContent = '日付を選択';
+    label.textContent = '対象日';
+    input.type = 'date';
+    input.value = value;
+  }
+
+  modal.classList.add('active');
+  setTimeout(() => input.focus({ preventScroll: true }), 0);
+}
+
+function applyFallbackPicker() {
+  const input = document.getElementById('fallbackPickerInput');
+  const val = input.value;
+  if (!val) {
+    showToast('日付を選択してください', 'error');
+    return;
+  }
+
+  if (fallbackPickerMode === 'month') {
+    const monthStr = val.slice(0, 7);
+    currentMonthStr = monthStr;
+    const currentDay = parseDate(currentDate).getDate();
+    const [year, month] = monthStr.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const day = String(Math.min(currentDay, daysInMonth)).padStart(2, '0');
+    currentDate = `${monthStr}-${day}`;
+    updateDateDisplay();
+    updateMonthNav();
+    loadMonthReservations();
+  } else {
+    currentDate = val;
+    updateDateDisplay();
+    loadReservations();
+  }
+
+  closeModal('fallbackPickerModal');
 }
 
 function openNativePicker(inputEl, value) {
@@ -1518,6 +1615,16 @@ function initModals() {
   document.getElementById('qrPrintBtn').addEventListener('click', () => window.print());
   document.getElementById('qrModal').addEventListener('click', e => {
     if (e.target === document.getElementById('qrModal')) closeModal('qrModal');
+  });
+
+  // モバイル向け日付選択モーダル
+  document.getElementById('fallbackPickerCancelBtn').addEventListener('click', () => closeModal('fallbackPickerModal'));
+  document.getElementById('fallbackPickerApplyBtn').addEventListener('click', applyFallbackPicker);
+  document.getElementById('fallbackPickerInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') applyFallbackPicker();
+  });
+  document.getElementById('fallbackPickerModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('fallbackPickerModal')) closeModal('fallbackPickerModal');
   });
 }
 
